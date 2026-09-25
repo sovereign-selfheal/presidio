@@ -1,0 +1,49 @@
+---
+name: ci
+
+"on":
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  HADOLINT_VERSION: v2.15.1
+  # Python tools, run with uv (never pip).
+  YAMLLINT_VERSION: 1.38.0
+
+# Quay builds and pushes the image on git tags (build trigger). This workflow only
+# checks that the image builds and works; it pushes nothing.
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v10.2.0
+
+      - name: yamllint
+        run: uvx yamllint@${YAMLLINT_VERSION} .
+
+      - name: shellcheck
+        run: shellcheck tests/*.sh
+
+      - name: hadolint
+        run: docker run --rm -i "hadolint/hadolint:${HADOLINT_VERSION}" < Containerfile
+
+  build-and-smoke:
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Build the image (no push)
+        run: podman build -f Containerfile -t localhost/presidio:ci .
+
+      - name: Smoke test
+        run: tests/smoke.sh localhost/presidio:ci
